@@ -134,6 +134,7 @@ page_type *create_page(size_t size)
         if(!page)
         {
             page_num = i;
+            PAGE_TABLE[page_num] = BUSY;
             break;
         }
         // last one, there is no free pages, exiting
@@ -143,33 +144,44 @@ page_type *create_page(size_t size)
         }
     }
 
-    if(size > sizeof(page_type) && size < sizeof(page_type) * 10)
+    char *page_offset = get_page_offset(page_num);
+    // First free block
+    free_block_type *free_block;
+    int free_block_count;
+
+    // Case when descriptor lies in first block of page
+    if(size >= sizeof(page_type) && size < sizeof(page_type) * 3)
     {
-        char *page_offset = get_page_offset(page_num);
-
-        // First free block
-        free_block_type *free_block = (free_block_type *)(page_offset + size);
-        int free_block_count = PAGE_SIZE / size - 1;
-
-        // Insert descriptor in first block on page
         page = (page_type *)page_offset;
-        page->block_size = size;
-        page->free_block = free_block;
-        page->free_block_count = free_block_count;
-        page->next = NULL;
-
-        // Make list of free blocks
-        for (int i = 0; i < free_block_count; ++i)
-        {
-            free_block->next = (free_block_type *)((char *)free_block + size);
-            free_block = free_block->next;
-        }
+        free_block = (free_block_type *)(page_offset + size);
+        free_block_count = PAGE_SIZE / size - 1;
     }
+    // Case when we must allocate memory for descriptor
     else
     {
-        // Not Implemented! Error!
-        printf("Not Implemented Error\n");
-        exit(EXIT_FAILURE);
+        page = mem_alloc(sizeof(page_type));
+
+        // No space for descriptor. Release page, exiting
+        if(!page)
+        {
+            PAGE_TABLE[page_num] = NULL;
+            return NULL;
+        }
+
+        free_block = (free_block_type *)page_offset;
+        free_block_count = PAGE_SIZE / size;
+    }
+
+    page->block_size = size;
+    page->free_block = free_block;
+    page->free_block_count = free_block_count;
+    page->next = NULL;
+
+    // Make list of free blocks
+    for (int i = 0; i < free_block_count; ++i)
+    {
+        free_block->next = (free_block_type *)((char *)free_block + size);
+        free_block = free_block->next;
     }
     PAGE_TABLE[page_num] = page;
     return page;
