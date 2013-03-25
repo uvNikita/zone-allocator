@@ -1,3 +1,5 @@
+main.c
 *.bin
+*.o
 *.sublime-project
 *.sublime-workspace
