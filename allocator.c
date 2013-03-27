@@ -14,6 +14,8 @@
 #define BUSY ((page_type *) 1)
 #define MIN_BLOCK_SIZE (sizeof(free_block_type))
 
+#define max_block_count(page) ((int)(PAGE_SIZE / page->block_size))
+
 
 static char memory[SIZE];
 
@@ -33,15 +35,17 @@ struct page_struct
     free_block_type *free_block;
     int free_block_count;
     struct page_struct *next;
+    struct page_struct *prev;
 };
 
 
 typedef struct page_struct page_type;
 
 
-// System utils
+// system utils
 page_type *create_page(size_t);
 char *get_page_offset(int);
+int get_page_num(void *);
 size_t round_to_4(size_t);
 int log_2(int);
 
@@ -53,7 +57,7 @@ void mem_init()
         PAGE_TABLE[i] = NULL;
     }
 
-    // First page used for inner usage
+    // first page used for inner usage
     PAGE_TABLE[0] = (page_type *) BUSY;
 
     for (int i = 0; i < FREE_TABLE_SIZE; ++i)
@@ -79,10 +83,9 @@ void mem_dump()
         else
         {
             page_type *page = PAGE_TABLE[i];
-            int block_num = PAGE_SIZE / page->block_size;
             printf("# %zu | %d(%d) #\n", page->block_size,
                                          page->free_block_count,
-                                         block_num);
+                                         max_block_count(page));
         }
     }
     printf("\n");
@@ -102,7 +105,7 @@ void *mem_alloc(size_t size)
 
     page_type *page = *(FREE_TABLE + free_id);
 
-    // There is no page with requested size, try to create it
+    // there is no page with requested size, try to create it
     if(!page)
     {
         page = create_page(real_size);
@@ -123,9 +126,76 @@ void *mem_alloc(size_t size)
 }
 
 
+void mem_free(void *addr)
+{
+    int page_num = get_page_num(addr);
+    page_type *page = *(PAGE_TABLE + page_num);
+    free_block_type *new_free_block = (free_block_type *) addr;
+
+    // add new free block to the end of free blocks list
+    free_block_type *free_block = page->free_block;
+    if(free_block)
+    {
+        while(free_block->next)
+        {
+            free_block = free_block->next;
+        }
+        free_block->next = new_free_block;
+    }
+    else
+    {
+        page->free_block = new_free_block;
+    }
+
+    page->free_block_count++;
+
+    int free_id = log_2((int) page->block_size);
+
+    // case when page becomes empty
+    if(page->free_block_count == max_block_count(page))
+    {
+        page_type *prev_page = page->prev;
+        if(prev_page)
+        {
+            prev_page->next = page->next;
+        }
+        else
+        {
+            *(FREE_TABLE + free_id) = NULL;
+        }
+        *(PAGE_TABLE + page_num) = NULL;
+
+        // not sure!
+        mem_free((void *)page);
+        return;
+    }
+
+    // case when page must be added as one with free block
+    if(page->free_block_count == 1)
+    {
+        page_type *free_page = *(FREE_TABLE + free_id);
+        if(free_page)
+        {
+            // add current page to the and of the pages list
+            while(free_page->next)
+            {
+                free_page = free_page->next;
+            }
+            free_page->next = page;
+        }
+        else
+        {
+            *(FREE_TABLE + free_id) = page;
+        }
+    }
+    return;
+
+}
+
+
 page_type *create_page(size_t size)
 {
-    // Try to find free page
+    // try to find free page
     page_type *page;
     int page_num;
     for (int i = 0; i < PAGE_COUNT; ++i)
@@ -145,23 +215,23 @@ page_type *create_page(size_t size)
     }
 
     char *page_offset = get_page_offset(page_num);
-    // First free block
+    // first free block
     free_block_type *free_block;
     int free_block_count;
 
-    // Case when descriptor lies in first block of page
+    // case when descriptor lies in first block of page
     if(size >= sizeof(page_type) && size < sizeof(page_type) * 3)
     {
         page = (page_type *)page_offset;
         free_block = (free_block_type *)(page_offset + size);
         free_block_count = PAGE_SIZE / size - 1;
     }
-    // Case when we must allocate memory for descriptor
+    // case when we must allocate memory for descriptor
     else
     {
         page = mem_alloc(sizeof(page_type));
 
-        // No space for descriptor. Release page, exiting
+        // no space for descriptor. Release page, exiting
         if(!page)
         {
             PAGE_TABLE[page_num] = NULL;
@@ -176,13 +246,15 @@ page_type *create_page(size_t size)
     page->free_block = free_block;
     page->free_block_count = free_block_count;
     page->next = NULL;
+    page->prev = NULL;
 
-    // Make list of free blocks
-    for (int i = 0; i < free_block_count; ++i)
+    // make list of free blocks
+    for (int i = 0; i < free_block_count - 1; ++i)
     {
         free_block->next = (free_block_type *)((char *)free_block + size);
         free_block = free_block->next;
     }
+    free_block->next = NULL;
     PAGE_TABLE[page_num] = page;
     return page;
 }
@@ -191,6 +263,13 @@ page_type *create_page(size_t size)
 char *get_page_offset(int page_num)
 {
     return (char *)(memory + page_num * PAGE_SIZE);
+}
+
+
+int get_page_num(void *addr)
+{
+    int offset = (char *)addr - memory;
+    return offset / PAGE_SIZE;
 }
 
 
