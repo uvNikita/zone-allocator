@@ -15,6 +15,7 @@
 #define MIN_BLOCK_SIZE (sizeof(free_block_type))
 
 #define max_block_count(page) ((int)(PAGE_SIZE / page->block_size))
+#define is_remote_descriptor(size) (size < sizeof(page_type) || size > sizeof(page_type) * 3)
 
 
 static char memory[SIZE];
@@ -152,7 +153,9 @@ void mem_free(void *addr)
     int free_id = log_2((int) page->block_size);
 
     // case when page becomes empty
-    if(page->free_block_count == max_block_count(page))
+    if(page->free_block_count == max_block_count(page)
+       || (!is_remote_descriptor(page->block_size)
+           && page->free_block_count == (max_block_count(page) - 1)))
     {
         page_type *prev_page = page->prev;
         if(prev_page)
@@ -165,8 +168,10 @@ void mem_free(void *addr)
         }
         *(PAGE_TABLE + page_num) = NULL;
 
-        // not sure!
-        mem_free((void *)page);
+        if(is_remote_descriptor(page->block_size))
+        {
+            mem_free((void *)page);
+        }
         return;
     }
 
@@ -220,7 +225,7 @@ page_type *create_page(size_t size)
     int free_block_count;
 
     // case when descriptor lies in first block of page
-    if(size >= sizeof(page_type) && size < sizeof(page_type) * 3)
+    if(!is_remote_descriptor(size))
     {
         page = (page_type *)page_offset;
         free_block = (free_block_type *)(page_offset + size);
