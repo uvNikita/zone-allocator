@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <stdbool.h>
 #include <math.h>
 
@@ -194,7 +195,22 @@ void mem_free(void *addr)
         }
     }
     return;
+}
 
+
+void *mem_realloc(void *addr, size_t size)
+{
+    void *new_addr = mem_alloc(size);
+    if(new_addr)
+    {
+        memmove(new_addr, addr, size);
+        mem_free(addr);
+        return new_addr;
+    }
+    else
+    {
+        return NULL;
+    }
 }
 
 
