@@ -16,6 +16,7 @@
 #define MIN_BLOCK_SIZE (sizeof(free_block_type))
 
 #define max_block_count(page) ((int)(PAGE_SIZE / page->block_size))
+#define is_big_block(page) (page->block_size >= PAGE_SIZE)
 #define is_remote_descriptor(size) (size < sizeof(page_type) || size > sizeof(page_type) * 3)
 
 
@@ -48,6 +49,7 @@ typedef struct page_struct page_type;
 page_type *create_page(size_t);
 char *get_page_offset(int);
 int get_page_num(void *);
+void *mem_alloc_big(size_t);
 size_t round_to_4(size_t);
 int log_2(int);
 
@@ -105,6 +107,11 @@ void *mem_alloc(size_t size)
         return NULL;
     }
 
+    if(real_size > PAGE_SIZE / 2)
+    {
+        return mem_alloc_big(real_size);
+    }
+
     page_type *page = *(FREE_TABLE + free_id);
 
     // there is no page with requested size, try to create it
@@ -128,11 +135,60 @@ void *mem_alloc(size_t size)
 }
 
 
+void *mem_alloc_big(size_t size)
+{
+    int page_count = size / PAGE_SIZE;
+    // search for big enough sequence of empty pages
+    page_type *page;
+    int page_num;
+    for (int i = 0; i < PAGE_COUNT; ++i)
+    {
+        bool found = false;
+        page = *(PAGE_TABLE + i);
+        if(page)
+        {
+            continue;
+        }
+        for (int j = 0; j < page_count; ++j)
+        {
+            if (*(PAGE_TABLE + i + j))
+            {
+                break;
+            }
+            // Last one, sequence was found
+            if(j == page_count - 1)
+            {
+                found = true;
+            }
+        }
+        if(found){
+            page_num = i;
+            break;
+        }
+    }
+
+    // Mark pages as busy
+    for (int i = 0; i < page_count; ++i)
+    {
+        *(PAGE_TABLE + page_num + i) = BUSY;
+    }
+
+    page = mem_alloc(sizeof(page_type));
+    page->block_size = size;
+    page->free_block_count = 0;
+    page->next = NULL;
+    page->prev = NULL;
+    *(PAGE_TABLE + page_num) = page;
+    return (void *)get_page_offset(page_num);
+}
+
+
 void mem_free(void *addr)
 {
     int page_num = get_page_num(addr);
     page_type *page = *(PAGE_TABLE + page_num);
     free_block_type *new_free_block = (free_block_type *) addr;
+    new_free_block->next = NULL;
 
     // add new free block to the end of free blocks list
     free_block_type *free_block = page->free_block;
