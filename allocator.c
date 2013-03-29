@@ -50,6 +50,7 @@ page_type *create_page(size_t);
 char *get_page_offset(int);
 int get_page_num(void *);
 void *mem_alloc_big(size_t);
+void mem_free_big(void *);
 size_t round_to_4(size_t);
 int log_2(int);
 
@@ -184,6 +185,11 @@ void mem_free(void *addr)
 {
     int page_num = get_page_num(addr);
     page_type *page = *(PAGE_TABLE + page_num);
+    if(is_big_block(page))
+    {
+        mem_free_big(addr);
+        return;
+    }
     free_block_type *new_free_block = (free_block_type *) addr;
     new_free_block->next = NULL;
 
@@ -248,6 +254,19 @@ void mem_free(void *addr)
         }
     }
     return;
+}
+
+
+void mem_free_big(void *addr)
+{
+    int page_num = get_page_num(addr);
+    page_type *page = *(PAGE_TABLE + page_num);
+    int page_count = page->block_size / PAGE_SIZE;
+    for (int i = 0; i < page_count; ++i)
+    {
+        *(PAGE_TABLE + page_num + i) = NULL;
+    }
+    mem_free((void *)page);
 }
 
 
