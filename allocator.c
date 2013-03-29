@@ -139,33 +139,30 @@ void *mem_alloc_big(size_t size)
 {
     int page_count = size / PAGE_SIZE;
     // search for big enough sequence of empty pages
-    page_type *page;
-    int page_num;
-    for (int i = 0; i < PAGE_COUNT; ++i)
+    int page_num = 0;
+    for (bool found = false; !found; ++page_num)
     {
-        bool found = false;
-        page = *(PAGE_TABLE + i);
-        if(page)
-        {
-            continue;
-        }
+        found = true;
         for (int j = 0; j < page_count; ++j)
         {
-            if (*(PAGE_TABLE + i + j))
+            if (*(PAGE_TABLE + page_num + j))
             {
+                found = false;
                 break;
             }
-            // Last one, sequence was found
-            if(j == page_count - 1)
+        }
+
+        // Last one
+        if(page_num >= (PAGE_COUNT - page_count))
+        {
+            if(!found)
             {
-                found = true;
+                return NULL;
             }
         }
-        if(found){
-            page_num = i;
-            break;
-        }
     }
+    // correcting found id
+    page_num--;
 
     // Mark pages as busy
     for (int i = 0; i < page_count; ++i)
@@ -173,7 +170,7 @@ void *mem_alloc_big(size_t size)
         *(PAGE_TABLE + page_num + i) = BUSY;
     }
 
-    page = mem_alloc(sizeof(page_type));
+    page_type *page = mem_alloc(sizeof(page_type));
     page->block_size = size;
     page->free_block_count = 0;
     page->next = NULL;
