@@ -8,19 +8,20 @@
 
 
 #define PAGE_SIZE 2048
-#define PAGE_COUNT (SIZE / PAGE_SIZE)
+#define PAGE_COUNT (MEM_SIZE / PAGE_SIZE)
 #define PAGE_TABLE ((page_type **) memory)
 #define FREE_TABLE_SIZE (log_2(PAGE_SIZE / 2) + 1)
 #define FREE_TABLE (((page_type **) memory) + PAGE_COUNT)
 #define BUSY ((page_type *) 1)
 #define MIN_BLOCK_SIZE (sizeof(free_block_type))
 
+#define MIN(X,Y) ((X) < (Y) ? (X) : (Y))
 #define max_block_count(page) ((int)(PAGE_SIZE / page->block_size))
 #define is_big_block(page) (page->block_size >= PAGE_SIZE)
 #define is_remote_descriptor(size) (size < sizeof(page_type) || size > sizeof(page_type) * 3)
 
 
-static char memory[SIZE];
+static char memory[MEM_SIZE];
 
 
 struct free_block_struct
@@ -119,18 +120,27 @@ void *mem_alloc(size_t size)
     if(!page)
     {
         page = create_page(real_size);
-        // TODO: if can't create!
+        if(!page)
+        {
+            return NULL;
+        }
 
         *(FREE_TABLE + free_id) = page;
     }
 
     free_block_type *free_block = page->free_block;
     page->free_block = free_block->next;
-    page->free_block_count -= 1;
+    page->free_block_count--;
 
     if(page->free_block_count == 0)
     {
         *(FREE_TABLE + free_id) = page->next;
+        page_type *next_page = page->next;
+        if(next_page)
+        {
+            next_page->prev = NULL;
+            page->next = NULL;
+        }
     }
     return (void *) free_block;
 }
@@ -173,6 +183,7 @@ void *mem_alloc_big(size_t size)
 
     page_type *page = mem_alloc(sizeof(page_type));
     page->block_size = size;
+    page->free_block = NULL;
     page->free_block_count = 0;
     page->next = NULL;
     page->prev = NULL;
@@ -221,6 +232,11 @@ void mem_free(void *addr)
         if(prev_page)
         {
             prev_page->next = page->next;
+            page_type *next_page = page->next;
+            if(next_page)
+            {
+                next_page->prev = prev_page;
+            }
         }
         else
         {
@@ -247,6 +263,8 @@ void mem_free(void *addr)
                 free_page = free_page->next;
             }
             free_page->next = page;
+            page->prev = free_page;
+            page->next = NULL;
         }
         else
         {
@@ -275,7 +293,8 @@ void *mem_realloc(void *addr, size_t size)
     void *new_addr = mem_alloc(size);
     if(new_addr)
     {
-        memmove(new_addr, addr, size);
+        page_type *page = *(PAGE_TABLE + get_page_num(addr));
+        memcpy(new_addr, addr, MIN(page->block_size, size));
         mem_free(addr);
         return new_addr;
     }

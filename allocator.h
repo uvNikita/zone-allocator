@@ -1,6 +1,6 @@
 #include <stdlib.h>
 
-#define SIZE 65536
+#define MEM_SIZE 65536
 
 void *mem_alloc(size_t size);
 void mem_free(void *addr);
