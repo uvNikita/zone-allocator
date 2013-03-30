@@ -122,7 +122,7 @@ void *mem_alloc(size_t size)
         page = create_page(real_size);
         if(!page)
         {
-            return NULL;
+            return mem_alloc(real_size + 1);
         }
 
         *(FREE_TABLE + free_id) = page;
